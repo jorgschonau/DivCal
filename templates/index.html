@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DivCal</title>
+    <style>
+        body { 
+            font-family: 'Courier New', monospace; 
+            padding: 20px; 
+            background: #f5e8c7 url('https://www.transparenttextures.com/patterns/paper-fibers.png'); 
+            color: #3c2f2f; 
+        }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #3c2f2f; padding: 8px; text-align: left; }
+        th { background-color: #8b0000; color: #f5e8c7; }
+        form { margin-bottom: 20px; }
+        input { padding: 5px; margin-right: 10px; background: #f5e8c7; color: #3c2f2f; border: 1px solid #3c2f2f; }
+        button { background: #8b0000; color: #f5e8c7; border: none; padding: 5px; }
+        a { color: #8b0000; }
+        pre { margin: 0; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <pre>
++-----------+
+|  DIVCAL   |
+|  Dividend |
+| Calendar  |
++-----------+
+
+________  .__      _________        .__   
+\______ \ |__|__  _\_   ___ \_____  |  |  
+ |    |  \|  \  \/ /    \  \/\__  \ |  |  
+ |    `   \  |\   /\     \____/ __ \|  |__
+/_______  /__| \_/  \______  (____  /____/
+        \/                 \/     \/   
+    </pre>
+    <h1>DivCal</h1>
+    <p>Your Dividend Calendar - All your dividends at a glance, never miss a payout!</p>
+    <p>Total Dividends: ${{ "%.2f"|format(total_dividends) }}</p>
+    <p><a href="{{ url_for('logout') }}">Logout</a></p>
+    <form method="POST" action="/add">
+        <input type="text" name="ticker" placeholder="Ticker (e.g., AAPL)" required>
+        <input type="number" name="shares" placeholder="Shares" step="0.01" required>
+        <button type="submit">Add Stock</button>
+    </form>
+    
+    <h2>Your Stocks</h2>
+    {% if stocks %}
+    <table>
+        <tr>
+            <th>Ticker</th>
+            <th>Shares</th>
+            <th>Dividend</th>
+        </tr>
+        {% for stock in stocks %}
+        <tr>
+            <td>{{ stock[0] }}</td>
+            <td>{{ stock[1] }}</td>
+            <td>€{{ "%.2f"|format(stock[2]) }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p>No stocks added yet!</p>
+    {% endif %}
+</body>
+</html>

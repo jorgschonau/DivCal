@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sign Up - DivCal</title>
+    <style>
+        body { 
+            font-family: 'Courier New', monospace; 
+            padding: 20px; 
+            background: #f5e8c7 url('https://www.transparenttextures.com/patterns/paper-fibers.png'); 
+            color: #3c2f2f; 
+        }
+        form { margin-bottom: 20px; }
+        input { padding: 5px; margin-right: 10px; background: #f5e8c7; color: #3c2f2f; border: 1px solid #3c2f2f; }
+        button { background: #8b0000; color: #f5e8c7; border: none; padding: 5px; }
+        a { color: #8b0000; }
+        pre { margin: 0; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <pre>
++-----------+
+|  DIVCAL   |
+|  Dividend |
+| Calendar  |
++-----------+
+
+________  .__      _________        .__   
+\______ \ |__|__  _\_   ___ \_____  |  |  
+ |    |  \|  \  \/ /    \  \/\__  \ |  |  
+ |    `   \  |\   /\     \____/ __ \|  |__
+/_______  /__| \_/  \______  (____  /____/
+        \/                 \/     \/   
+    </pre>
+    <h1>Sign Up for DivCal</h1>
+    <p>Your Dividend Calendar - All your dividends at a glance, never miss a payout!</p>
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <p>{{ messages[0] }}</p>
+        {% endif %}
+    {% endwith %}
+    <form method="POST">
+        <input type="text" name="username" placeholder="Username" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Sign Up</button>
+    </form>
+    <p>Already a user? <a href="{{ url_for('login') }}">Login</a></p>
+</body>
+</html>
