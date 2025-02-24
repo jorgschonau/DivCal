@@ -2,6 +2,9 @@
 <html>
 <head>
     <title>DivCal</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js" crossorigin="anonymous"></script>
+    <script src="https://code.jquery.com/ui/1.12.1/jquery-ui.min.js" crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://code.jquery.com/ui/1.12.1/themes/base/jquery-ui.css">
     <style>
         body { 
             font-family: 'Courier New', monospace; 
@@ -17,6 +20,8 @@
         button { background: #00ff00; color: #1a1a1a; border: none; padding: 5px; }
         a { color: #00ff00; }
         pre { margin: 0; font-size: 14px; color: #00ff00; }
+        .ui-menu-item { background: #2d2d2d; color: #e0e0e0; }
+        .ui-menu-item:hover { background: #004d00; color: #e0e0e0; }
     </style>
 </head>
 <body>
@@ -33,29 +38,88 @@
     <p><a href="{{ url_for('logout') }}">Logout</a></p>
     
     <form method="POST" action="/add">
-        <input type="text" name="ticker" placeholder="Ticker (e.g., AAPL)" required>
-        <input type="number" name="shares" placeholder="Amount of Shares" step="0.01" required>
+        <input type="text" name="name" id="nameInput" placeholder="Stock Name (e.g., SAP SE)" required>
+        <input type="text" name="ticker" id="tickerInput" placeholder="Ticker (e.g., SAP)" required>
+        <input type="number" name="shares" placeholder="Shares" step="0.01" required>
         <button type="submit">Add Stock</button>
     </form>
     
     <h2>Your Stocks</h2>
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            {% for message in messages %}
+                <p style="color: #ff5555;">{{ message }}</p>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
     {% if stocks %}
     <table>
         <tr>
+            <th>Stock Name</th>
             <th>Ticker</th>
             <th>Shares</th>
             <th>Dividend</th>
+            <th>Action</th>
         </tr>
         {% for stock in stocks %}
         <tr>
-            <td>{{ stock[0] }}</td>
-            <td>{{ stock[1] }}</td>
-            <td>€{{ "%.2f"|format(stock[2]) }}</td>
+            <td>{{ stock.name }}</td>  <!-- Use stock.name from dict -->
+            <td>{{ stock.ticker }}</td>  <!-- Use stock.ticker from dict -->
+            <td>{{ stock.shares }}</td>  <!-- Use stock.shares from dict -->
+            <td>€{{ "%.2f"|format(stock.dividend) }}</td>  <!-- Use stock.dividend from dict -->
+            <td>
+                <form method="POST" action="/stocks/{{ stock.id }}" style="display:inline;">
+                    <button type="submit" onclick="return confirm('Delete this stock?')">Delete</button>
+                </form>
+            </td>
         </tr>
         {% endfor %}
     </table>
     {% else %}
     <p>No stocks added yet!</p>
     {% endif %}
+    
+    <script>
+    $(function() {
+        $("#tickerInput").autocomplete({
+            source: function(request, response) {
+                $.ajax({
+                    url: "/tickers",
+                    dataType: "json",
+                    data: { q: request.term },
+                    success: function(data) {
+                        response(data);
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.log(textStatus + " " + errorThrown);
+                    }
+                });
+            },
+            minLength: 1  // Start suggesting after 1 character
+        });
+        
+        // Optional: Add autocomplete for stock name (simplified, server-side handled for now)
+        $("#nameInput").on('change', function() {
+            var name = $(this).val();
+            if (name) {
+                $.ajax({
+                    url: "/lookup_ticker",
+                    data: { name: name },
+                    dataType: "json",
+                    success: function(data) {
+                        if (data.ticker) {
+                            $("#tickerInput").val(data.ticker);
+                        } else {
+                            alert('No ticker found for this stock name.');
+                        }
+                    },
+                    error: function(jqXHR, textStatus, errorThrown) {
+                        console.log(textStatus + " " + errorThrown);
+                    }
+                });
+            }
+        });
+    });
+    </script>
 </body>
 </html>

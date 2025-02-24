@@ -1,3 +1,4 @@
+import pandas as pd  # For yfinance fix
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 import yfinance as yf
@@ -19,13 +20,48 @@ class User(UserMixin):
 def load_user(user_id):
     return User(user_id)
 
+def lookup_ticker_from_name(name):
+    # Simple search—expand with better API or database later
+    # Try common German/European stocks first
+    stock_map = {
+        'sap se': 'SAP',
+        'daimler': 'DAI.DE',
+        'bmw': 'BMW.DE',
+        'apple': 'AAPL',
+        'microsoft': 'MSFT',
+        'tesla': 'TSLA',
+        'volkswagen': 'VOW.DE',
+        'deutsche bank': 'DBK.DE'
+    }
+    # Case-insensitive search
+    normalized_name = name.lower().strip()
+    if normalized_name in stock_map:
+        return stock_map[normalized_name]
+    
+    # Fallback: Use yfinance to search (basic, limited—expand later)
+    try:
+        # Search for ticker by name (simplified—yfinance doesn’t have direct name search, so we test common tickers)
+        for ticker in ['SAP', 'DAI.DE', 'BMW.DE', 'AAPL', 'MSFT', 'TSLA', 'VOW.DE', 'DBK.DE']:
+            stock = yf.Ticker(ticker)
+            if stock.info.get('longName', '').lower().strip() == normalized_name:
+                return ticker
+        return None  # No match found
+    except Exception as e:
+        print(f"Error looking up ticker for {name}: {e}")
+        return None
+
 def init_db():
     conn = sqlite3.connect('divcal.db')
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users 
                  (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT)''')
+    # Check if stocks table exists and has name column
+    c.execute('PRAGMA table_info(stocks)')
+    columns = [col[1] for col in c.fetchall()]
+    if 'name' not in columns:
+        c.execute('ALTER TABLE stocks ADD COLUMN name TEXT')
     c.execute('''CREATE TABLE IF NOT EXISTS stocks 
-                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, ticker TEXT, shares REAL, dividend REAL)''')
+                 (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, name TEXT, ticker TEXT, shares REAL, dividend REAL)''')
     conn.commit()
     conn.close()
 
@@ -75,30 +111,67 @@ def logout():
 def index():
     conn = sqlite3.connect('divcal.db')
     c = conn.cursor()
-    c.execute('SELECT ticker, shares, dividend FROM stocks WHERE user_id = ?', (current_user.id,))
-    stocks = c.fetchall()
-    total_dividends = sum(stock[2] for stock in stocks)
+    c.execute('SELECT id, name, ticker, shares, dividend FROM stocks WHERE user_id = ?', (current_user.id,))
+    stocks = [{'id': row[0], 'name': row[1], 'ticker': row[2], 'shares': row[3], 'dividend': row[4]} for row in c.fetchall()]
+    total_dividends = sum(stock['dividend'] for stock in stocks)
     conn.close()
     return render_template('index.html', stocks=stocks, total_dividends=total_dividends)
 
 @app.route('/add', methods=['POST'])
 @login_required
 def add_stock():
-    ticker = request.form['ticker'].upper()
+    name = request.form.get('name', '').strip()  # New field for stock name
+    ticker = request.form.get('ticker', '').upper().strip()
     shares = float(request.form['shares'])
     
-    stock = yf.Ticker(ticker)
-    dividends = stock.dividends.tail(1)
-    dividend_per_share = dividends.iloc[0] if not dividends.empty else 0.50
-    total_dividend = shares * dividend_per_share
+    # If name is provided but ticker is empty, try to look up ticker
+    if name and not ticker:
+        ticker = lookup_ticker_from_name(name)  # New function
+        if not ticker:
+            flash('Could not find ticker for the stock name provided.')
+            return redirect(url_for('index'))
     
+    # If ticker is provided (or found), fetch dividends
+    if ticker:
+        stock = yf.Ticker(ticker)
+        dividends = stock.dividends
+        
+        # Check if dividends is a pandas Series/DataFrame and not empty
+        if isinstance(dividends, pd.Series) and not dividends.empty:
+            dividend_per_share = dividends.tail(1).iloc[0]  # Get the latest dividend
+        else:
+            dividend_per_share = 0.50  # Fallback: 0.50 EUR if no data (adjust as needed)
+        
+        # Convert to Euros (assuming USD to EUR at 0.92 for now—update with API later)
+        dividend_per_share = dividend_per_share * 0.92 if dividend_per_share != 0.50 else dividend_per_share
+        
+        total_dividend = shares * dividend_per_share
+        
+        # Get stock name if not provided (use yfinance to fetch)
+        if not name:
+            name = stock.info.get('longName', ticker)  # Use longName or fallback to ticker
+        
+        conn = sqlite3.connect('divcal.db')
+        c = conn.cursor()
+        c.execute('INSERT INTO stocks (user_id, name, ticker, shares, dividend) VALUES (?, ?, ?, ?, ?)', 
+                  (current_user.id, name, ticker, shares, total_dividend))
+        conn.commit()
+        conn.close()
+        
+        return redirect(url_for('index'))
+    else:
+        flash('Please provide a ticker or valid stock name.')
+        return redirect(url_for('index'))
+
+@app.route('/stocks/<int:id>', methods=['POST'])
+@login_required
+def delete_stock(id):
     conn = sqlite3.connect('divcal.db')
     c = conn.cursor()
-    c.execute('INSERT INTO stocks (user_id, ticker, shares, dividend) VALUES (?, ?, ?, ?)', 
-              (current_user.id, ticker, shares, total_dividend))
+    c.execute('DELETE FROM stocks WHERE id = ? AND user_id = ?', (id, current_user.id))
     conn.commit()
     conn.close()
-    
+    flash('Stock deleted successfully')
     return redirect(url_for('index'))
 
 @app.route('/stocks', methods=['GET'])
@@ -106,12 +179,26 @@ def add_stock():
 def get_stocks():
     conn = sqlite3.connect('divcal.db')
     c = conn.cursor()
-    c.execute('SELECT ticker, shares, dividend FROM stocks WHERE user_id = ?', (current_user.id,))
-    stocks = [{'ticker': row[0], 'shares': row[1], 'dividend': row[2]} for row in c.fetchall()]
+    c.execute('SELECT id, name, ticker, shares, dividend FROM stocks WHERE user_id = ?', (current_user.id,))
+    stocks = [{'id': row[0], 'name': row[1], 'ticker': row[2], 'shares': row[3], 'dividend': row[4]} for row in c.fetchall()]
     total_dividends = sum(stock['dividend'] for stock in stocks)
     conn.close()
     return jsonify({'stocks': stocks, 'total_dividends': total_dividends})
 
+@app.route('/tickers', methods=['GET'])
+def get_tickers():
+    # Static list of common German/European tickers (expand with yfinance later)
+    tickers = ['SAP', 'DAI.DE', 'BMW.DE', 'AAPL', 'MSFT', 'TSLA', 'VOW.DE', 'DBK.DE']
+    return jsonify(tickers)
+
+@app.route('/lookup_ticker', methods=['GET'])
+def lookup_ticker():
+    name = request.args.get('name', '').strip()
+    ticker = lookup_ticker_from_name(name)
+    if ticker:
+        return jsonify({'ticker': ticker})
+    return jsonify({'ticker': None})
+
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True, host='0.0.0.0', port=5001)  # Using 5001 from your port fix
